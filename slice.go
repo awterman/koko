@@ -98,15 +98,16 @@ func (s *Slice) Missed() []int {
 	return s.missedIdxs
 }
 
-func (s *Slice) Filter(indexs []int) {
+func (s *Slice) Filter(indexs []int) *Slice {
 	s.inte = filter(s.Interfaces(), indexs)
 	*s = Slice{
 		inte:     s.inte,
 		elemType: s.elemType,
 	}
+	return s
 }
 
-func (s *Slice) Fill(data *Slice) {
+func (s *Slice) FillMissed(data *Slice) {
 	fill(s.Interfaces(), data.Interfaces(), s.Missed())
 	*s = Slice{
 		inte:     s.inte,

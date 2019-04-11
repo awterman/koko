@@ -55,41 +55,52 @@ func VariantBatchWrite(fn interface{}) BatchWrite {
 
 // --- callbacks ---
 
+func available(s *Slice, err error) bool {
+	return err == nil && s != nil && !s.IsEmpty()
+}
+
 func BatchReadThrough(c BatchCache, miss BatchRead, keys interface{}) (interface{}, error) {
 	ks := SliceFromSpecific(keys)
 	vs, err := c.BatchRead(ks)
-	if err == nil {
-		if vs == nil {
-			vs = SliceFromInterfaces(nil, c.ValueType())
-		}
-		ks.Filter(vs.Missed())
-
-		var missedValues interface{}
-		if cc, ok := c.(chainedBatchCache); ok && cc.lower != nil {
-			missedValues, err = BatchReadThrough(cc.lower, miss, ks.Specific())
-		} else {
-			missedValues, err = miss(ks.Specific())
-		}
-		if err != nil {
-			return vs.Specific(), err
-		}
-		// It's driver's responsibility to handle write error.
-		_ = c.BatchWrite(ks, SliceFromSpecific(missedValues))
-		vs.Fill(SliceFromSpecific(missedValues))
-		return vs.Specific(), nil
-	} else {
-		// It's driver's responsibility to handle read error.
+	if !available(vs, err) {
 		values, err := miss(keys)
 		if err != nil {
 			return nil, err
 		}
 		return values, nil
 	}
+
+	ks.Filter(vs.Missed())
+
+	missedValues, err := miss(ks.Specific())
+	if err != nil {
+		return vs.Specific(), err
+	}
+	_ = c.BatchWrite(ks, SliceFromSpecific(missedValues))
+	vs.FillMissed(SliceFromSpecific(missedValues))
+	return vs.Specific(), nil
 }
 
 type chainedBatchCache struct {
 	BatchCache
 	lower *chainedBatchCache
+}
+
+func (cc chainedBatchCache) BatchRead(keys *Slice) (*Slice, error) {
+	values, err := cc.BatchCache.BatchRead(keys)
+	if !available(values, err) {
+		return nil, err
+	}
+
+	if cc.lower != nil {
+		missedKeys := keys.Copy().Filter(values.Missed())
+		missValues, err := cc.lower.BatchRead(missedKeys)
+		if available(missValues, err) {
+			values.FillMissed(missValues)
+			_ = cc.BatchWrite(missedKeys, missValues)
+		}
+	}
+	return values, nil
 }
 
 func ChainBatchCache(upper BatchCache, lowers ...BatchCache) BatchCache {
