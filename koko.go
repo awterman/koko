@@ -26,11 +26,36 @@ type (
 	BatchWrite func(keys interface{}, values interface{}) error
 )
 
+func VariantBatchRead(fn interface{}) BatchRead {
+	fnValue := reflect.ValueOf(fn)
+
+	return func(keys interface{}) (interface{}, error) {
+		out := fnValue.Call([]reflect.Value{reflect.ValueOf(keys)})
+		var err error
+		if !out[1].IsNil() {
+			err = out[1].Interface().(error)
+		}
+
+		return out[0].Interface(), err
+	}
+}
+
+func VariantBatchWrite(fn interface{}) BatchWrite {
+	fnValue := reflect.ValueOf(fn)
+
+	return func(keys interface{}, values interface{}) error {
+		out := fnValue.Call([]reflect.Value{reflect.ValueOf(keys), reflect.ValueOf(values)})
+		var err error
+		if !out[1].IsNil() {
+			err = out[1].Interface().(error)
+		}
+		return err
+	}
+}
+
 // --- callbacks ---
 
 func BatchReadThrough(c BatchCache, miss BatchRead, keys interface{}) (interface{}, error) {
-	type missError error
-
 	ks := SliceFromSpecific(keys)
 	vs, err := c.BatchRead(ks)
 	if err == nil {
@@ -44,23 +69,16 @@ func BatchReadThrough(c BatchCache, miss BatchRead, keys interface{}) (interface
 			missedValues, err = BatchReadThrough(cc.lower, miss, ks.Specific())
 		} else {
 			missedValues, err = miss(ks.Specific())
-			err = missError(err)
 		}
 		if err != nil {
 			return vs.Specific(), err
 		}
-		err = c.BatchWrite(ks, SliceFromSpecific(missedValues))
-		if err != nil {
-			// log error: write back failed
-		}
+		// It's driver's responsibility to handle write error.
+		_ = c.BatchWrite(ks, SliceFromSpecific(missedValues))
 		vs.Fill(SliceFromSpecific(missedValues))
 		return vs.Specific(), nil
 	} else {
-		if _, ok := err.(missError); !ok {
-			return vs.Specific(), err
-		}
-
-		// log error: read failed
+		// It's driver's responsibility to handle read error.
 		values, err := miss(keys)
 		if err != nil {
 			return nil, err

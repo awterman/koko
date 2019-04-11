@@ -31,17 +31,3 @@ func UnmarshalJSON(b []byte, typ reflect.Type) (interface{}, error) {
 func MarshalJSON(v interface{}) ([]byte, error) {
 	return json.Marshal(v)
 }
-
-func VariantFunc(fn interface{}) BatchRead {
-	fnValue := reflect.ValueOf(fn)
-
-	return func(keys interface{}) (interface{}, error) {
-		out := fnValue.Call([]reflect.Value{reflect.ValueOf(keys)})
-		var err error
-		if !out[1].IsNil() {
-			err = out[1].Interface().(error)
-		}
-
-		return out[0].Interface(), err
-	}
-}

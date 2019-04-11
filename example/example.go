@@ -45,7 +45,7 @@ func getMyStructs(keys []string) ([]*myStruct, error) {
 			koko.NewMapCache(&syncMap, valueType),
 			koko.NewRedisCache(redisPool, valueType),
 		),
-		koko.VariantFunc(expensive),
+		koko.VariantBatchRead(expensive),
 		keys,
 	)
 	if err != nil {
