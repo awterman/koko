@@ -31,6 +31,14 @@ func SliceFromReflectValue(value reflect.Value) *Slice {
 	}
 }
 
+func NewCacheMissedSlice(length int, elemType reflect.Type) *Slice {
+	sli := make([]interface{}, length)
+	for i := range sli {
+		sli[i] = CacheMissed
+	}
+	return SliceFromInterfaces(sli, elemType)
+}
+
 func (s *Slice) String() string {
 	return fmt.Sprintf("%+v", s.Interfaces())
 }
@@ -44,14 +52,22 @@ func (s *Slice) Copy() *Slice {
 	return &ns
 }
 
-func (s *Slice) IsEmpty() bool {
+func (s *Slice) Len() int {
+	if s.inte != nil {
+		return len(s.inte)
+	}
+
+	return s.SpecificValue().Len()
+}
+
+func (s *Slice) Intialized() bool {
 	if s.spec == nil &&
 		(s.inte == nil || s.elemType == nil) &&
 		!s.specValue.IsValid() {
 
-		return true
+		return false
 	}
-	return false
+	return true
 }
 
 func (s *Slice) Specific() interface{} {

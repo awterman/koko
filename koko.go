@@ -1,6 +1,7 @@
 package koko
 
 import (
+	"fmt"
 	"reflect"
 )
 
@@ -15,6 +16,8 @@ type BatchCache interface {
 	// BatchRead returns values, missed values should be returned as CacheMissed.
 	BatchRead(keys *Slice) (*Slice, error)
 	BatchWrite(keys *Slice, values *Slice) error
+	CanDelete() bool
+	Delete(keys *Slice) error
 }
 
 // --- for driver, users do not need this. ---
@@ -46,8 +49,8 @@ func VariantBatchWrite(fn interface{}) BatchWrite {
 	return func(keys interface{}, values interface{}) error {
 		out := fnValue.Call([]reflect.Value{reflect.ValueOf(keys), reflect.ValueOf(values)})
 		var err error
-		if !out[1].IsNil() {
-			err = out[1].Interface().(error)
+		if !out[0].IsNil() {
+			err = out[0].Interface().(error)
 		}
 		return err
 	}
@@ -56,7 +59,7 @@ func VariantBatchWrite(fn interface{}) BatchWrite {
 // --- callbacks ---
 
 func available(s *Slice, err error) bool {
-	return err == nil && s != nil && !s.IsEmpty()
+	return err == nil && s != nil && s.Intialized()
 }
 
 func BatchReadThrough(c BatchCache, miss BatchRead, keys interface{}) (interface{}, error) {
@@ -81,40 +84,74 @@ func BatchReadThrough(c BatchCache, miss BatchRead, keys interface{}) (interface
 	return vs.Specific(), nil
 }
 
-type chainedBatchCache struct {
-	BatchCache
-	lower *chainedBatchCache
+type ChainedBatchCache struct {
+	// upper -> lower
+	caches    []BatchCache
+	valueType reflect.Type
+	canDelete bool
 }
 
-func (cc chainedBatchCache) BatchRead(keys *Slice) (*Slice, error) {
-	values, err := cc.BatchCache.BatchRead(keys)
-	if !available(values, err) {
-		return nil, err
+func (cc *ChainedBatchCache) ValueType() reflect.Type {
+	return cc.valueType
+}
+
+func (cc *ChainedBatchCache) BatchRead(keys *Slice) (*Slice, error) {
+	missedKeys := keys.Copy()
+	values, err := cc.caches[0].BatchRead(missedKeys)
+	missedIdxs := values.Missed()
+	if available(values, err) {
+		missedKeys = missedKeys.Filter(missedIdxs)
 	}
 
-	if cc.lower != nil {
-		missedKeys := keys.Copy().Filter(values.Missed())
-		missValues, err := cc.lower.BatchRead(missedKeys)
-		if available(missValues, err) {
-			values.FillMissed(missValues)
-			_ = cc.BatchWrite(missedKeys, missValues)
+	var stack []BatchCache
+	for _, c := range cc.caches {
+		missedValues, err := c.BatchRead(missedKeys)
+		if !available(missedValues, err) {
+			continue
 		}
+
+		values.FillMissed(missedValues)
+
+		for i := len(stack) - 1; i >= 0; i-- {
+			_ = stack[i].BatchWrite(missedKeys, missedValues)
+		}
+
+		stack = append(stack, c)
 	}
+
 	return values, nil
 }
 
-func ChainBatchCache(upper BatchCache, lowers ...BatchCache) BatchCache {
-	ret := chainedBatchCache{
-		BatchCache: upper,
-	}
-	cc := &ret
+func (cc *ChainedBatchCache) BatchWrite(keys *Slice, values *Slice) error {
+	// TODO: implement.
+	return nil
+}
+
+func (cc *ChainedBatchCache) CanDelete() bool {
+	return cc.canDelete
+}
+
+func (cc *ChainedBatchCache) Delete(keys *Slice) error {
+	// TODO: implement.
+	return nil
+}
+
+func ChainBatchCache(upper BatchCache, lowers ...BatchCache) (*ChainedBatchCache, error) {
+	var cc ChainedBatchCache
+	cc.valueType = upper.ValueType()
+	cc.caches = []BatchCache{upper}
+	cc.canDelete = upper.CanDelete()
 
 	for _, c := range lowers {
-		cc.lower = &chainedBatchCache{
-			BatchCache: c,
+		if cc.valueType != c.ValueType() {
+			return nil, fmt.Errorf("valueType: %v != %v", cc.valueType, c.ValueType())
 		}
-		cc = cc.lower
+		if !c.CanDelete() {
+			cc.canDelete = false
+		}
+
+		cc.caches = append(cc.caches, c)
 	}
 
-	return ret
+	return &cc, nil
 }

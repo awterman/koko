@@ -27,6 +27,7 @@ type myStruct struct {
 	S string
 }
 
+// We assume this is an expensive operation.
 func expensive(ks []string) ([]*myStruct, error) {
 	vs := make([]*myStruct, len(ks))
 	for i, k := range ks {
@@ -40,14 +41,13 @@ func expensive(ks []string) ([]*myStruct, error) {
 
 func getMyStructs(keys []string) ([]*myStruct, error) {
 	valueType := reflect.TypeOf((*myStruct)(nil))
-	values, err := koko.BatchReadThrough(
-		koko.ChainBatchCache(
-			koko.NewMapCache(&syncMap, valueType),
-			koko.NewRedisCache(redisPool, valueType),
-		),
-		koko.VariantBatchRead(expensive),
-		keys,
+	// Koko can manage caches in multi layers.
+	cache, _ := koko.ChainBatchCache(
+		koko.NewMapCache(&syncMap, valueType),
+		koko.NewRedisCache(redisPool, valueType),
 	)
+
+	values, err := koko.BatchReadThrough(cache, koko.VariantBatchRead(expensive), keys)
 	if err != nil {
 		return nil, err
 	}

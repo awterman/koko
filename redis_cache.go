@@ -20,7 +20,7 @@ func (r *RedisCache) ValueType() reflect.Type {
 
 func (r *RedisCache) BatchRead(keys *Slice) (*Slice, error) {
 	//fmt.Println("read redis:", keys)
-	if len(keys.Interfaces()) == 0 {
+	if keys.Len() == 0 {
 		return nil, nil
 	}
 
@@ -52,7 +52,7 @@ func (r *RedisCache) BatchRead(keys *Slice) (*Slice, error) {
 
 func (r *RedisCache) BatchWrite(keys *Slice, values *Slice) error {
 	//fmt.Println("write redis:", keys)
-	if len(keys.Interfaces()) == 0 {
+	if keys.Len() == 0 {
 		return nil
 	}
 
@@ -86,6 +86,18 @@ func (r *RedisCache) BatchWrite(keys *Slice, values *Slice) error {
 	conn.Receive()
 
 	return nil
+}
+
+func (r *RedisCache) CanDelete() bool {
+	return true
+}
+
+func (r *RedisCache) Delete(keys *Slice) error {
+	conn := r.pool.Get()
+	defer conn.Close()
+
+	_, err := conn.Do("DEL", keys.Interfaces()...)
+	return err
 }
 
 func (r *RedisCache) WithValueType(valueType reflect.Type) *RedisCache {

@@ -44,6 +44,17 @@ func (m *MapCache) BatchWrite(keys *Slice, values *Slice) error {
 	return nil
 }
 
+func (m *MapCache) CanDelete() bool {
+	return true
+}
+
+func (m *MapCache) Delete(keys *Slice) error {
+	for _, k := range keys.Interfaces() {
+		m.m.Delete(k)
+	}
+	return nil
+}
+
 func NewMapCache(m *sync.Map, valueType reflect.Type) *MapCache {
 	return &MapCache{
 		m:         m,
