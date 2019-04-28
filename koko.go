@@ -30,6 +30,11 @@ type (
 )
 
 func VariantBatchRead(fn interface{}) BatchRead {
+	fnType := reflect.TypeOf(fn)
+	if fnType.NumIn() != 1 || fnType.NumOut() != 2 {
+		panic("function incompatible with BatchRead")
+	}
+
 	fnValue := reflect.ValueOf(fn)
 
 	return func(keys interface{}) (interface{}, error) {
@@ -44,6 +49,11 @@ func VariantBatchRead(fn interface{}) BatchRead {
 }
 
 func VariantBatchWrite(fn interface{}) BatchWrite {
+	fnType := reflect.TypeOf(fn)
+	if fnType.NumIn() != 2 || fnType.NumOut() != 1 {
+		panic("function incompatible with BatchWrite")
+	}
+
 	fnValue := reflect.ValueOf(fn)
 
 	return func(keys interface{}, values interface{}) error {
