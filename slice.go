@@ -60,7 +60,7 @@ func (s *Slice) Len() int {
 	return s.SpecificValue().Len()
 }
 
-func (s *Slice) Intialized() bool {
+func (s *Slice) Initialized() bool {
 	if s.spec == nil &&
 		(s.inte == nil || s.elemType == nil) &&
 		!s.specValue.IsValid() {

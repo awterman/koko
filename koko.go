@@ -59,7 +59,7 @@ func VariantBatchWrite(fn interface{}) BatchWrite {
 // --- callbacks ---
 
 func available(s *Slice, err error) bool {
-	return err == nil && s != nil && s.Intialized()
+	return err == nil && s != nil && s.Initialized()
 }
 
 func BatchReadThrough(c BatchCache, miss BatchRead, keys interface{}) (interface{}, error) {
@@ -77,7 +77,7 @@ func BatchReadThrough(c BatchCache, miss BatchRead, keys interface{}) (interface
 
 	missedValues, err := miss(ks.Specific())
 	if err != nil {
-		return vs.Specific(), err
+		return vs.Specific(), fmt.Errorf("koko.BatchReadThrough: %v", err)
 	}
 	_ = c.BatchWrite(ks, SliceFromSpecific(missedValues))
 	vs.FillMissed(SliceFromSpecific(missedValues))
@@ -123,7 +123,13 @@ func (cc *ChainedBatchCache) BatchRead(keys *Slice) (*Slice, error) {
 }
 
 func (cc *ChainedBatchCache) BatchWrite(keys *Slice, values *Slice) error {
-	// TODO: implement.
+	for i := len(cc.caches) - 1; i >= 0; i-- {
+		err := cc.caches[i].BatchWrite(keys, values)
+		if err != nil {
+			return fmt.Errorf("koko.ChainedBatchCache.BatchWrite: failed to write in (level %d) cache: %v", i, err)
+		}
+	}
+
 	return nil
 }
 
@@ -132,7 +138,17 @@ func (cc *ChainedBatchCache) CanDelete() bool {
 }
 
 func (cc *ChainedBatchCache) Delete(keys *Slice) error {
-	// TODO: implement.
+	if !cc.CanDelete() {
+		return fmt.Errorf("koko.ChainedBatchCache.Delete: delete is not supported")
+	}
+
+	for i := len(cc.caches) - 1; i >= 0; i-- {
+		err := cc.caches[i].Delete(keys)
+		if err != nil {
+			return fmt.Errorf("koko.ChainedBatchCache.Delete: failed to delete in (level %d) cache: %v", i, err)
+		}
+	}
+
 	return nil
 }
 
@@ -144,7 +160,7 @@ func ChainBatchCache(upper BatchCache, lowers ...BatchCache) (*ChainedBatchCache
 
 	for _, c := range lowers {
 		if cc.valueType != c.ValueType() {
-			return nil, fmt.Errorf("valueType: %v != %v", cc.valueType, c.ValueType())
+			return nil, fmt.Errorf("koko.ChainBatchCache: valueType: %v != %v", cc.valueType, c.ValueType())
 		}
 		if !c.CanDelete() {
 			cc.canDelete = false
